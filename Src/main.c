@@ -67,7 +67,11 @@ osMutexId money_mutexHandle;
 
 /* USER CODE BEGIN PV */
 /* Private variables ---------------------------------------------------------*/
-volatile int flags = 0;
+//volatile int flags = 0;
+static int COFFEE_BUTTON = 0;
+static int RETURN_BUTTON = 0;
+static int COIN_BUTTON = 0;
+static int flags=0;
 static int money = 0;
 static int coin_inserted = 0; //for debugging
 int32_t temperature;
@@ -96,12 +100,12 @@ void StartCoffeTask(void const * argument);
 
 /* USER CODE BEGIN 0 */
 static int button_coin_pressed(fsm_t* this){
-  return flags & FLAG_BUTTON_COIN;
+  return COIN_BUTTON;
 }
 
 static int button_start_pressed (fsm_t* this) {
-  int aux = (flags & FLAG_BUTTON_S);
-  if(aux){
+  //int aux = (flags & FLAG_BUTTON_S);
+  if(COFFEE_BUTTON){
 	if(xSemaphoreTake(money_mutexHandle,coffe_delay_TimeInTicks)== pdPASS){
 		if(money>=COFFEE_PRICE){
 			money=money-COFFEE_PRICE;
@@ -116,11 +120,11 @@ static int button_start_pressed (fsm_t* this) {
 		}
 	}
   }
-  return aux;
+  return COFFEE_BUTTON;
  }
 
 static int button_cancell_pressed (fsm_t* this) {
-  return (flags & FLAG_BUTTON_C); }
+  return RETURN_BUTTON; }
 
 static int tim2_finished (fsm_t* this) {
   return (flags & FLAG_TIM2); }
@@ -129,7 +133,7 @@ static int tim3_finished (fsm_t* this) {
   return (flags & FLAG_TIM3); }
 
 static void cup (fsm_t* this){
-  flags =0;
+  COFFEE_BUTTON =0;
   HAL_GPIO_WritePin(START_LED_GPIO_Port, START_LED_Pin, GPIO_PIN_SET);
   HAL_TIM_Base_Start_IT(&htim2);
 }
@@ -168,11 +172,11 @@ static void finish (fsm_t* this)
 static void add_money (fsm_t* this){
   //int local_money; //when i use printf
   if(xSemaphoreTake(money_mutexHandle,coins_delay_TimeInTicks)== pdPASS){
-	  coin_inserted=10;
+	  coin_inserted=60;
 	  money+=coin_inserted;
 	  //local_money = money; //when i use printf
 	 xSemaphoreGive(money_mutexHandle);
-	 flags = 0;
+	 COIN_BUTTON = 0;
 	 //printf("Coins inserted: %d\n", coin_inserted);
 	 //printf("Total money: %d\n", local_money);
   }
@@ -184,7 +188,7 @@ static void return_money (fsm_t* this){
 		//local_money = money; //when i use printf
 		money=0;
 		xSemaphoreGive(money_mutexHandle);
-		flags = 0;
+		RETURN_BUTTON = 0;
 		 //printf("Total money: %d\n", local_money);
 	  }
 
@@ -575,20 +579,16 @@ static void MX_GPIO_Init(void)
 
 /* USER CODE BEGIN 4 */
 void HAL_GPIO_EXTI_Callback(uint16_t GPIO_Pin){
-	switch (GPIO_Pin){
-		case COIN_BUTTON_Pin:
-			flags |= FLAG_BUTTON_COIN;
-			break;
-		case START_BUTTON_Pin:
-			flags |= FLAG_BUTTON_S;
-			break;
-		case CANCELL_BUTTON_Pin:
-			flags |= FLAG_BUTTON_C;
-			break;
-		default:
-			flags = 0;
-			break;
+
+	if(GPIO_Pin == COIN_BUTTON_Pin){
+		COIN_BUTTON = 1;
 	}
+	if(GPIO_Pin == START_BUTTON_Pin){
+		COFFEE_BUTTON = 1;
+		}
+	if(GPIO_Pin == CANCELL_BUTTON_Pin){
+		RETURN_BUTTON = 1;
+		}
 
 }
 /* USER CODE END 4 */
@@ -650,15 +650,20 @@ void StartTemperatureTask(void const * argument){
   */
 void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim)
 {
-/* USER CODE BEGIN Callback 0 */
 
-/* USER CODE END Callback 0 */
   if (htim->Instance == TIM1) {
     HAL_IncTick();
   }
-/* USER CODE BEGIN Callback 1 */
+  if (htim->Instance == TIM2) {
+	  flags |= FLAG_TIM2;
+    }
+  if (htim->Instance == TIM3) {
+	  flags |= FLAG_TIM3;
+    }
+  if (htim->Instance == TIM6) {
+	  flags |= FLAG_TIM6;
+    }
 
-/* USER CODE END Callback 1 */
 }
 
 /**

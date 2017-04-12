@@ -4,7 +4,7 @@
 fsm_t*
 fsm_new (fsm_trans_t* tt)
 {
-  fsm_t* this = (fsm_t*) malloc (sizeof (fsm_t));
+  fsm_t* this = (fsm_t*) pvPortMalloc (sizeof (fsm_t));
   fsm_init (this, tt);
   return this;
 }
