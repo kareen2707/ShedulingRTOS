@@ -68,8 +68,12 @@ osMutexId money_mutexHandle;
 /* USER CODE BEGIN PV */
 /* Private variables ---------------------------------------------------------*/
 volatile int flags = 0;
-static int money;
+static int money = 0;
+static int coin_inserted = 0; //for debugging
 int32_t temperature;
+TickType_t coffe_delay_TimeInTicks = pdMS_TO_TICKS( 200 );
+TickType_t coins_delay_TimeInTicks = pdMS_TO_TICKS( 200 );
+
 /* USER CODE END PV */
 
 /* Private function prototypes -----------------------------------------------*/
@@ -92,16 +96,25 @@ void StartTask02(void const * argument);
 
 /* USER CODE BEGIN 0 */
 static int button_coin_pressed(fsm_t* this){
-  return (flags & FLAG_BUTTON_COIN);
+  return flags & FLAG_BUTTON_COIN;
 }
 
 static int button_start_pressed (fsm_t* this) {
   int aux = (flags & FLAG_BUTTON_S);
   if(aux){
-    if(money>= COFFEE_PRICE){
-      return 1;
-    }
-    return 0;
+	if(xSemaphoreTake(money_mutexHandle,coffe_delay_TimeInTicks)== pdPASS){
+		if(money>=COFFEE_PRICE){
+			money=money-COFFEE_PRICE;
+			xSemaphoreGive(money_mutexHandle);
+			//printf("Enough money, Let´s Start!");
+			return 1;
+		}
+		else{
+			xSemaphoreGive(money_mutexHandle);
+			//printf("Insert more money, please.");
+			return 0;
+		}
+	}
   }
   return aux;
  }
@@ -117,8 +130,6 @@ static int tim3_finished (fsm_t* this) {
 
 static void cup (fsm_t* this){
   flags =0;
-  //current_machine = COFFEE_FSM;
-  money -= COFFEE_PRICE;
   HAL_GPIO_WritePin(START_LED_GPIO_Port, START_LED_Pin, GPIO_PIN_SET);
   HAL_TIM_Base_Start_IT(&htim2);
 }
@@ -142,21 +153,41 @@ static void milk (fsm_t* this)
 
 static void finish (fsm_t* this)
 {
-  flags = 0;
   HAL_GPIO_WritePin(MILK_LED_GPIO_Port, MILK_LED_Pin, GPIO_PIN_RESET);
   HAL_GPIO_WritePin(FINISH_LED_GPIO_Port, FINISH_LED_Pin, GPIO_PIN_SET);
-  //current_machine = WALLET_FSM;
-  money = 0;
+  int local_money;
+  if(xSemaphoreTake(money_mutexHandle,coffe_delay_TimeInTicks)== pdPASS){
+  		local_money = money; //when i use printf
+  		money=0;
+  		xSemaphoreGive(money_mutexHandle);
+  		flags = 0;
+  		 //printf("Exchange: %d\n", local_money);
+  	  }
 }
 
 static void add_money (fsm_t* this){
-  flags = 0;
-  money = 50;
+  int local_money; //when i use printf
+  if(xSemaphoreTake(money_mutexHandle,coins_delay_TimeInTicks)== pdPASS){
+	  coin_inserted=10;
+	  money+=coin_inserted;
+	  local_money = money; //when i use printf
+	 xSemaphoreGive(money_mutexHandle);
+	 flags = 0;
+	 //printf("Coins inserted: %d\n", coin_inserted);
+	 //printf("Total money: %d\n", local_money);
+  }
 }
 
 static void return_money (fsm_t* this){
-  flags = 0;
-  money = 0;
+	int local_money; //when i use printf
+	if(xSemaphoreTake(money_mutexHandle,coins_delay_TimeInTicks)== pdPASS){
+		local_money = money; //when i use printf
+		money=0;
+		xSemaphoreGive(money_mutexHandle);
+		flags = 0;
+		 //printf("Total money: %d\n", local_money);
+	  }
+
 }
 
 // Explicit COFFEE FSM description
@@ -218,13 +249,13 @@ static int temp_low(fsm_t* this){
 	}
 }
 
-static int led_on(fsm_t * this){
+static void led_on(fsm_t * this){
 	flags = 0;
 	HAL_GPIO_WritePin(GPIOC, GPIO_PIN_9, GPIO_PIN_RESET);
 	HAL_GPIO_WritePin(GPIOC, GPIO_PIN_8, GPIO_PIN_SET);
 }
 
-static int led_off(fsm_t * this){
+static void led_off(fsm_t * this){
 	flags = 0;
 	HAL_GPIO_WritePin(GPIOC, GPIO_PIN_8, GPIO_PIN_RESET);
 	HAL_GPIO_WritePin(GPIOC, GPIO_PIN_9, GPIO_PIN_SET);
@@ -241,7 +272,9 @@ int main(void)
 {
 
   /* USER CODE BEGIN 1 */
-
+	fsm_t* coffem_fsm = fsm_new (cofm);
+	fsm_t* coinsm_fsm = fsm_new (coinsm);
+	fsm_t* temperature_fsm = fsm_new (temperaturem);
   /* USER CODE END 1 */
 
   /* MCU Configuration----------------------------------------------------------*/
@@ -268,22 +301,19 @@ int main(void)
   osMutexDef(money_mutex);
   money_mutexHandle = osMutexCreate(osMutex(money_mutex));
 
-  /* USER CODE BEGIN RTOS_MUTEX */
-  /* add mutexes, ... */
-  /* USER CODE END RTOS_MUTEX */
 
   /* USER CODE BEGIN RTOS_SEMAPHORES */
   /* add semaphores, ... */
   /* USER CODE END RTOS_SEMAPHORES */
 
-  /* USER CODE BEGIN RTOS_TIMERS */
-  /* start timers, add new ones, ... */
-  /* USER CODE END RTOS_TIMERS */
-
   /* Create the thread(s) */
   /* definition and creation of defaultTask */
   osThreadDef(defaultTask, StartDefaultTask, osPriorityNormal, 0, 128);
   defaultTaskHandle = osThreadCreate(osThread(defaultTask), NULL);
+
+  /* definition and creation of coffem_fsm */
+    osThreadDef(coffem_fsm, StartTask02, osPriorityNormal, 0, 128);
+    coffem_fsmHandle = osThreadCreate(osThread(coffem_fsm), NULL);
 
   /* definition and creation of coinsm_fsm */
   osThreadDef(coinsm_fsm, StartTask03, osPriorityNormal, 0, 128);
@@ -292,15 +322,6 @@ int main(void)
   /* definition and creation of temperature_fsm */
   osThreadDef(temperature_fsm, StartTask04, osPriorityNormal, 0, 128);
   temperature_fsmHandle = osThreadCreate(osThread(temperature_fsm), NULL);
-
-  /* definition and creation of coffem_fsm */
-  osThreadDef(coffem_fsm, StartTask02, osPriorityNormal, 0, 128);
-  coffem_fsmHandle = osThreadCreate(osThread(coffem_fsm), NULL);
-
-  /* USER CODE BEGIN RTOS_QUEUES */
-  /* add queues, ... */
-  /* USER CODE END RTOS_QUEUES */
- 
 
   /* Start scheduler */
   osKernelStart();
