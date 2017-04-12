@@ -84,6 +84,7 @@
 #define FLAG_BUTTON_C 0x04
 #define FLAG_TIM2 0x08
 #define FLAG_TIM3 0x10
+#define FLAG_TIM6 0x20
 /* Timers value ms */
 #define CUP_TIME 250
 #define COFFEE_TIME 3000

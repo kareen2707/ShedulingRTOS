@@ -44,12 +44,12 @@
 #include "main.h"
 #include "stm32f0xx_hal.h"
 #include "cmsis_os.h"
+
+/* USER CODE BEGIN Includes */
 #include "fsm.h"
 #include "wallet_states.h"
 #include "coffe_states.h"
-
-/* USER CODE BEGIN Includes */
-
+#include "temperature_states.h"
 /* USER CODE END Includes */
 
 /* Private variables ---------------------------------------------------------*/
@@ -67,7 +67,9 @@ osMutexId money_mutexHandle;
 
 /* USER CODE BEGIN PV */
 /* Private variables ---------------------------------------------------------*/
-
+volatile int flags = 0;
+static int money;
+int32_t temperature;
 /* USER CODE END PV */
 
 /* Private function prototypes -----------------------------------------------*/
@@ -89,7 +91,150 @@ void StartTask02(void const * argument);
 /* USER CODE END PFP */
 
 /* USER CODE BEGIN 0 */
+static int button_coin_pressed(fsm_t* this){
+  return (flags & FLAG_BUTTON_COIN);
+}
 
+static int button_start_pressed (fsm_t* this) {
+  int aux = (flags & FLAG_BUTTON_S);
+  if(aux){
+    if(money>= COFFEE_PRICE){
+      return 1;
+    }
+    return 0;
+  }
+  return aux;
+ }
+
+static int button_cancell_pressed (fsm_t* this) {
+  return (flags & FLAG_BUTTON_C); }
+
+static int tim2_finished (fsm_t* this) {
+  return (flags & FLAG_TIM2); }
+
+static int tim3_finished (fsm_t* this) {
+  return (flags & FLAG_TIM3); }
+
+static void cup (fsm_t* this){
+  flags =0;
+  //current_machine = COFFEE_FSM;
+  money -= COFFEE_PRICE;
+  HAL_GPIO_WritePin(START_LED_GPIO_Port, START_LED_Pin, GPIO_PIN_SET);
+  HAL_TIM_Base_Start_IT(&htim2);
+}
+
+static void coffee (fsm_t* this)
+{
+  flags = 0;
+  HAL_GPIO_WritePin(START_LED_GPIO_Port, START_LED_Pin, GPIO_PIN_RESET);
+  HAL_GPIO_WritePin(COFFE_LED_GPIO_Port, COFFE_LED_Pin, GPIO_PIN_SET);
+  HAL_TIM_Base_Start_IT(&htim3);
+
+}
+
+static void milk (fsm_t* this)
+{
+  flags = 0;
+  HAL_GPIO_WritePin(COFFE_LED_GPIO_Port, COFFE_LED_Pin, GPIO_PIN_RESET);
+  HAL_GPIO_WritePin(MILK_LED_GPIO_Port, MILK_LED_Pin, GPIO_PIN_SET);
+  HAL_TIM_Base_Start_IT(&htim3);
+}
+
+static void finish (fsm_t* this)
+{
+  flags = 0;
+  HAL_GPIO_WritePin(MILK_LED_GPIO_Port, MILK_LED_Pin, GPIO_PIN_RESET);
+  HAL_GPIO_WritePin(FINISH_LED_GPIO_Port, FINISH_LED_Pin, GPIO_PIN_SET);
+  //current_machine = WALLET_FSM;
+  money = 0;
+}
+
+static void add_money (fsm_t* this){
+  flags = 0;
+  money = 50;
+}
+
+static void return_money (fsm_t* this){
+  flags = 0;
+  money = 0;
+}
+
+// Explicit COFFEE FSM description
+static fsm_trans_t cofm[] = {
+  { COFM_WAITING, button_start_pressed, COFM_CUP,     cup    },
+  { COFM_CUP,     tim2_finished, COFM_COFFEE,  coffee },
+  { COFM_COFFEE,  tim3_finished, COFM_MILK,    milk   },
+  { COFM_MILK,    tim3_finished, COFM_WAITING, finish },
+  {-1, NULL, -1, NULL },
+};
+
+// Explicit WALLET FSM description
+static fsm_trans_t coinsm[] = {
+  {WALLM_WAITING, button_coin_pressed, WALLM_WAITING, add_money},
+  {WALLM_WAITING, button_cancell_pressed, WALLM_WAITING, return_money },
+  {-1, NULL, -1, NULL },
+};
+
+/*--------------- Sensor temperature -----------------------------------*/
+static int current_temperature () {
+	if (__HAL_ADC_GET_FLAG(&hadc, ADC_FLAG_EOC)){
+		temperature = (((int32_t)HAL_ADC_GetValue(&hadc)*VDD_APPLI/VDD_CALIB)- (int32_t) *TEMP30_CAL_ADDR );
+	  	temperature = temperature * (int32_t)(110 - 30);
+	  	temperature = temperature / (int32_t)(*TEMP110_CAL_ADDR - *TEMP30_CAL_ADDR);
+	  	temperature = temperature + 30;
+  }
+	return temperature;
+}
+
+static int temp_high(fsm_t* this){
+	int aux = flags & FLAG_TIM6;
+	if(aux){
+		int temp_aux = current_temperature();
+		if(temp_aux>=TEMP_REF){
+			return 1;
+		}
+		else{
+			return 0;
+		}
+	}
+	else{
+		return aux;
+	}
+}
+
+static int temp_low(fsm_t* this){
+	int aux = flags & FLAG_TIM6;
+	if(aux){
+		int temp_aux = current_temperature();
+		if(temp_aux<TEMP_REF){
+			return 1;
+		}
+		else{
+			return 0;
+		}
+	}
+	else{
+		return aux;
+	}
+}
+
+static int led_on(fsm_t * this){
+	flags = 0;
+	HAL_GPIO_WritePin(GPIOC, GPIO_PIN_9, GPIO_PIN_RESET);
+	HAL_GPIO_WritePin(GPIOC, GPIO_PIN_8, GPIO_PIN_SET);
+}
+
+static int led_off(fsm_t * this){
+	flags = 0;
+	HAL_GPIO_WritePin(GPIOC, GPIO_PIN_8, GPIO_PIN_RESET);
+	HAL_GPIO_WritePin(GPIOC, GPIO_PIN_9, GPIO_PIN_SET);
+}
+
+static fsm_trans_t temperaturem[] = {
+  {TEMP_WAITING, temp_high, TEMP_WAITING, led_on},
+  {TEMP_WAITING, temp_low, TEMP_WAITING, led_off },
+  {-1, NULL, -1, NULL },
+};
 /* USER CODE END 0 */
 
 int main(void)
@@ -406,7 +551,23 @@ static void MX_GPIO_Init(void)
 }
 
 /* USER CODE BEGIN 4 */
+void HAL_GPIO_EXTI_Callback(uint16_t GPIO_Pin){
+	switch (GPIO_Pin){
+		case COIN_BUTTON_Pin:
+			flags |= FLAG_BUTTON_COIN;
+			break;
+		case START_BUTTON_Pin:
+			flags |= FLAG_BUTTON_S;
+			break;
+		case CANCELL_BUTTON_Pin:
+			flags |= FLAG_BUTTON_C;
+			break;
+		default:
+			flags = 0;
+			break;
+	}
 
+}
 /* USER CODE END 4 */
 
 /* StartDefaultTask function */
@@ -468,15 +629,19 @@ void StartTask02(void const * argument)
   */
 void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim)
 {
-/* USER CODE BEGIN Callback 0 */
 
-/* USER CODE END Callback 0 */
   if (htim->Instance == TIM1) {
     HAL_IncTick();
   }
-/* USER CODE BEGIN Callback 1 */
-
-/* USER CODE END Callback 1 */
+  if(htim->Instance == TIM2){ // Flag related to timer cup 250ms
+	 flags |= FLAG_TIM2;
+  }
+  if(htim->Instance == TIM3){ // Flag related to timer coffee and milk 3s
+  	 flags |= FLAG_TIM3;
+    }
+  if(htim->Instance == TIM6){ // Flag related to timer sensor temperature 500ms
+  	 flags |= FLAG_TIM6;
+    }
 }
 
 /**
