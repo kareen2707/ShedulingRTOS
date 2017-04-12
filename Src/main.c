@@ -60,9 +60,9 @@ TIM_HandleTypeDef htim3;
 TIM_HandleTypeDef htim6;
 
 osThreadId defaultTaskHandle;
-osThreadId coinsm_fsmHandle;
-osThreadId temperature_fsmHandle;
-osThreadId coffem_fsmHandle;
+osThreadId walletTaskHandle;
+osThreadId temperatureTaskHandle;
+osThreadId coffeTaskHandle;
 osMutexId money_mutexHandle;
 
 /* USER CODE BEGIN PV */
@@ -71,8 +71,8 @@ volatile int flags = 0;
 static int money = 0;
 static int coin_inserted = 0; //for debugging
 int32_t temperature;
-TickType_t coffe_delay_TimeInTicks = pdMS_TO_TICKS( 200 );
-TickType_t coins_delay_TimeInTicks = pdMS_TO_TICKS( 200 );
+TickType_t coffe_delay_TimeInTicks = pdMS_TO_TICKS( 50 );
+TickType_t coins_delay_TimeInTicks = pdMS_TO_TICKS( 100 );
 
 /* USER CODE END PV */
 
@@ -85,9 +85,9 @@ static void MX_TIM2_Init(void);
 static void MX_TIM3_Init(void);
 static void MX_TIM6_Init(void);
 void StartDefaultTask(void const * argument);
-void StartTask03(void const * argument);
-void StartTask04(void const * argument);
-void StartTask02(void const * argument);
+void StartWalletTask(void const * argument);
+void StartTemperatureTask(void const * argument);
+void StartCoffeTask(void const * argument);
 
 /* USER CODE BEGIN PFP */
 /* Private function prototypes -----------------------------------------------*/
@@ -155,9 +155,9 @@ static void finish (fsm_t* this)
 {
   HAL_GPIO_WritePin(MILK_LED_GPIO_Port, MILK_LED_Pin, GPIO_PIN_RESET);
   HAL_GPIO_WritePin(FINISH_LED_GPIO_Port, FINISH_LED_Pin, GPIO_PIN_SET);
-  int local_money;
+  //int local_money;
   if(xSemaphoreTake(money_mutexHandle,coffe_delay_TimeInTicks)== pdPASS){
-  		local_money = money; //when i use printf
+  		//local_money = money; //when i use printf
   		money=0;
   		xSemaphoreGive(money_mutexHandle);
   		flags = 0;
@@ -166,11 +166,11 @@ static void finish (fsm_t* this)
 }
 
 static void add_money (fsm_t* this){
-  int local_money; //when i use printf
+  //int local_money; //when i use printf
   if(xSemaphoreTake(money_mutexHandle,coins_delay_TimeInTicks)== pdPASS){
 	  coin_inserted=10;
 	  money+=coin_inserted;
-	  local_money = money; //when i use printf
+	  //local_money = money; //when i use printf
 	 xSemaphoreGive(money_mutexHandle);
 	 flags = 0;
 	 //printf("Coins inserted: %d\n", coin_inserted);
@@ -179,9 +179,9 @@ static void add_money (fsm_t* this){
 }
 
 static void return_money (fsm_t* this){
-	int local_money; //when i use printf
+	//int local_money; //when i use printf
 	if(xSemaphoreTake(money_mutexHandle,coins_delay_TimeInTicks)== pdPASS){
-		local_money = money; //when i use printf
+		//local_money = money; //when i use printf
 		money=0;
 		xSemaphoreGive(money_mutexHandle);
 		flags = 0;
@@ -272,9 +272,7 @@ int main(void)
 {
 
   /* USER CODE BEGIN 1 */
-	fsm_t* coffem_fsm = fsm_new (cofm);
-	fsm_t* coinsm_fsm = fsm_new (coinsm);
-	fsm_t* temperature_fsm = fsm_new (temperaturem);
+
   /* USER CODE END 1 */
 
   /* MCU Configuration----------------------------------------------------------*/
@@ -301,27 +299,27 @@ int main(void)
   osMutexDef(money_mutex);
   money_mutexHandle = osMutexCreate(osMutex(money_mutex));
 
-
-  /* USER CODE BEGIN RTOS_SEMAPHORES */
-  /* add semaphores, ... */
-  /* USER CODE END RTOS_SEMAPHORES */
+  	fsm_t* coffem_fsm = fsm_new (cofm);
+  	fsm_t* coinsm_fsm = fsm_new (coinsm);
+  	fsm_t* temperature_fsm = fsm_new (temperaturem);
 
   /* Create the thread(s) */
   /* definition and creation of defaultTask */
-  osThreadDef(defaultTask, StartDefaultTask, osPriorityNormal, 0, 128);
+  osThreadDef(defaultTask, StartDefaultTask, osPriorityIdle, 0, 128);
   defaultTaskHandle = osThreadCreate(osThread(defaultTask), NULL);
 
-  /* definition and creation of coffem_fsm */
-    osThreadDef(coffem_fsm, StartTask02, osPriorityNormal, 0, 128);
-    coffem_fsmHandle = osThreadCreate(osThread(coffem_fsm), NULL);
+  /* definition and creation of walletTask */
+  osThreadDef(walletTask, StartWalletTask, osPriorityNormal, 0, 128);
+  walletTaskHandle = osThreadCreate(osThread(walletTask), coinsm_fsm);
 
-  /* definition and creation of coinsm_fsm */
-  osThreadDef(coinsm_fsm, StartTask03, osPriorityNormal, 0, 128);
-  coinsm_fsmHandle = osThreadCreate(osThread(coinsm_fsm), NULL);
+  /* definition and creation of coffeTask */
+    osThreadDef(coffeTask, StartCoffeTask, osPriorityBelowNormal, 0, 128);
+    coffeTaskHandle = osThreadCreate(osThread(coffeTask), coffem_fsm);
 
-  /* definition and creation of temperature_fsm */
-  osThreadDef(temperature_fsm, StartTask04, osPriorityNormal, 0, 128);
-  temperature_fsmHandle = osThreadCreate(osThread(temperature_fsm), NULL);
+  /* definition and creation of temperatureTask */
+  osThreadDef(temperatureTask, StartTemperatureTask, osPriorityLow, 0, 128);
+  temperatureTaskHandle = osThreadCreate(osThread(temperatureTask), temperature_fsm);
+
 
   /* Start scheduler */
   osKernelStart();
@@ -569,6 +567,10 @@ static void MX_GPIO_Init(void)
   GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_LOW;
   HAL_GPIO_Init(GPIOA, &GPIO_InitStruct);
 
+  /* EXTI interrupt init*/
+  HAL_NVIC_SetPriority(EXTI4_15_IRQn, 3, 0);
+  HAL_NVIC_EnableIRQ(EXTI4_15_IRQn);
+
 }
 
 /* USER CODE BEGIN 4 */
@@ -603,43 +605,41 @@ void StartDefaultTask(void const * argument)
   }
   /* USER CODE END 5 */ 
 }
+void StartWalletTask(void const * argument){
+	fsm_t* pcTaskName;
+	TickType_t xLastWakeTime;
+	pcTaskName = ( fsm_t * ) argument;
+	xLastWakeTime = xTaskGetTickCount();
 
-/* StartTask03 function */
-void StartTask03(void const * argument)
-{
-  /* USER CODE BEGIN StartTask03 */
-  /* Infinite loop */
-  for(;;)
-  {
-    osDelay(1);
-  }
-  /* USER CODE END StartTask03 */
+	for( ;; ){
+	fsm_fire(pcTaskName);
+	vTaskDelayUntil( &xLastWakeTime, pdMS_TO_TICKS( 150 ) );
+	 }
 }
 
-/* StartTask04 function */
-void StartTask04(void const * argument)
-{
-  /* USER CODE BEGIN StartTask04 */
-  /* Infinite loop */
-  for(;;)
-  {
-    osDelay(1);
-  }
-  /* USER CODE END StartTask04 */
+void StartCoffeTask(void const * argument){
+	fsm_t* pcTaskName;
+	TickType_t xLastWakeTime;
+	pcTaskName = ( fsm_t * ) argument;
+	xLastWakeTime = xTaskGetTickCount();
+
+	for( ;; ){
+	fsm_fire(pcTaskName);
+	vTaskDelayUntil( &xLastWakeTime, pdMS_TO_TICKS( 300 ) );
+	 }
 }
 
-/* StartTask02 function */
-void StartTask02(void const * argument)
-{
-  /* USER CODE BEGIN StartTask02 */
-  /* Infinite loop */
-  for(;;)
-  {
-    osDelay(1);
-  }
-  /* USER CODE END StartTask02 */
-}
+void StartTemperatureTask(void const * argument){
+	fsm_t* pcTaskName;
+	TickType_t xLastWakeTime;
+	pcTaskName = ( fsm_t * ) argument;
+	xLastWakeTime = xTaskGetTickCount();
 
+	for( ;; ){
+	fsm_fire(pcTaskName);
+	vTaskDelayUntil( &xLastWakeTime, pdMS_TO_TICKS( 100 ) );
+	 }
+}
 /**
   * @brief  Period elapsed callback in non blocking mode
   * @note   This function is called  when TIM1 interrupt took place, inside
@@ -650,19 +650,15 @@ void StartTask02(void const * argument)
   */
 void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim)
 {
+/* USER CODE BEGIN Callback 0 */
 
+/* USER CODE END Callback 0 */
   if (htim->Instance == TIM1) {
     HAL_IncTick();
   }
-  if(htim->Instance == TIM2){ // Flag related to timer cup 250ms
-	 flags |= FLAG_TIM2;
-  }
-  if(htim->Instance == TIM3){ // Flag related to timer coffee and milk 3s
-  	 flags |= FLAG_TIM3;
-    }
-  if(htim->Instance == TIM6){ // Flag related to timer sensor temperature 500ms
-  	 flags |= FLAG_TIM6;
-    }
+/* USER CODE BEGIN Callback 1 */
+
+/* USER CODE END Callback 1 */
 }
 
 /**

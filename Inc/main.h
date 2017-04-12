@@ -75,7 +75,6 @@
 #define SWDIO_GPIO_Port GPIOA
 #define SWCLK_Pin GPIO_PIN_14
 #define SWCLK_GPIO_Port GPIOA
-
 /* USER CODE BEGIN Private defines */
 #define COFFEE_PRICE 50
 /* Flags values */
