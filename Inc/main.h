@@ -75,16 +75,12 @@
 #define SWDIO_GPIO_Port GPIOA
 #define SWCLK_Pin GPIO_PIN_14
 #define SWCLK_GPIO_Port GPIOA
+
 /* USER CODE BEGIN Private defines */
 #define COFFEE_PRICE 50
 
-/* Timers value ms */
-#define CUP_TIME 250
-#define COFFEE_TIME 3000
-#define MILK_TIME 3000
-
 /*Temperature sensor defines*/
-#define TEMP_REF 30
+#define TEMP_REF 35
 #define TEMP110_CAL_ADDR ((uint16_t*)((uint32_t)0x1FFFF7C2))
 #define TEMP30_CAL_ADDR ((uint16_t*)((uint32_t)0x1FFFF7B8))
 #define VDD_CALIB ((uint16_t)(330))

@@ -9,7 +9,9 @@
 #define TEMPERATURE_STATES_H_
 
 enum temperature_state {
-  TEMP_WAITING
+  TEMP_IDLE,
+  TEMP_WAITING,
+  TEMP_SENSORING
 };
 
 #endif /* TEMPERATURE_STATES_H_ */

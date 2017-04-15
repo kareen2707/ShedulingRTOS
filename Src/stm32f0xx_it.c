@@ -71,7 +71,12 @@ void SysTick_Handler(void)
 /* For the available peripheral interrupt handler names,                      */
 /* please refer to the startup file (startup_stm32f0xx.s).                    */
 /******************************************************************************/
+void EXTI0_1_IRQHandler(void)
+{
 
+  HAL_GPIO_EXTI_IRQHandler(GPIO_PIN_0);
+
+}
 /**
 * @brief This function handles EXTI line 4 to 15 interrupts.
 */
