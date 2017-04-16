@@ -47,8 +47,8 @@
 
 /* USER CODE BEGIN Includes */
 #include "fsm.h"
+#include "coffee_states.h"
 #include "wallet_states.h"
-#include "coffe_states.h"
 #include "temperature_states.h"
 /* USER CODE END Includes */
 
@@ -57,26 +57,23 @@ ADC_HandleTypeDef hadc;
 
 TIM_HandleTypeDef htim2;
 TIM_HandleTypeDef htim3;
-TIM_HandleTypeDef htim6;
 
 osThreadId defaultTaskHandle;
+osThreadId coffeeTaskHandle;
 osThreadId walletTaskHandle;
 osThreadId temperatureTaskHandle;
-osThreadId coffeTaskHandle;
-osMutexId money_mutexHandle;
+osMutexId moneyHandle;
 
 /* USER CODE BEGIN PV */
 /* Private variables ---------------------------------------------------------*/
-static int flag_start_button = 0;
-static int flag_cancell_button = 0;
-static int flag_coin_button = 0;
-static int flag_B1=0;
-static int flag_tim2=0;
-static int flag_tim3=0;
-static int flag_tim6=0;
-static int money = 0;
+int flag_sensor = 0;
 int32_t temperature;
-
+int flag_coin_button = 0;
+int money = 0;
+int flag_start_button = 0;
+int flag_cancell_button = 0;
+int flag_tim2=0;
+int flag_tim3=0;
 
 /* USER CODE END PV */
 
@@ -87,22 +84,13 @@ static void MX_GPIO_Init(void);
 static void MX_ADC_Init(void);
 static void MX_TIM2_Init(void);
 static void MX_TIM3_Init(void);
-static void MX_TIM6_Init(void);
 void StartDefaultTask(void const * argument);
+void StartCoffeeTask(void const * argument);
 void StartWalletTask(void const * argument);
-void StartTemperatureTask(void const * argument);
-void StartCoffeTask(void const * argument);
+void StartSensorTask(void const * argument);
 
 /* USER CODE BEGIN PFP */
 /* Private function prototypes -----------------------------------------------*/
-static int newCoin();
-static int noCoffee();
-static int exChange();
-/* USER CODE END PFP */
-
-/* USER CODE BEGIN 0 */
-
-/*---------- Wallet FSM -----------------------------------------------*/
 static int newCoin(int coin){
 	money+=coin;
 	return money;
@@ -117,6 +105,11 @@ static int exchange(){
 	money=money- COFFEE_PRICE;
 	return money;
 }
+/* USER CODE END PFP */
+
+/* USER CODE BEGIN 0 */
+/*---------- Wallet FSM -----------------------------------------------*/
+
 
 static int button_coin_pressed(fsm_t* this){
 	if(flag_coin_button){
@@ -129,10 +122,10 @@ static int button_coin_pressed(fsm_t* this){
 
 static void add_money (fsm_t* this){
   //int local_money; //when i use printf
-  if(xSemaphoreTake(money_mutexHandle,( TickType_t ) 10)== pdTRUE){
+  if(xSemaphoreTake(moneyHandle,( TickType_t ) 10)== pdTRUE){
 	  //local_money=newCoin();
 	  newCoin(60);
-	 xSemaphoreGive(money_mutexHandle);
+	 xSemaphoreGive(moneyHandle);
 	 //printf("Total money: %d\n", local_money);
   }
 }
@@ -148,10 +141,10 @@ static int button_cancell_pressed (fsm_t* this) {
 
 static void return_money (fsm_t* this){
 	//int local_money;
-	if(xSemaphoreTake(money_mutexHandle,( TickType_t ) 10)== pdTRUE){
+	if(xSemaphoreTake(moneyHandle,( TickType_t ) 10)== pdTRUE){
 		//local_money = newCoin(0);
 		noCoffee();
-		xSemaphoreGive(money_mutexHandle);
+		xSemaphoreGive(moneyHandle);
 		 //printf("Your money: %d\n", local_money);
 	  }
 }
@@ -167,16 +160,16 @@ static fsm_trans_t coinsm[] = {
 static int button_start_pressed (fsm_t* this) {
  int result=0;
   if(flag_start_button){
-	  if(xSemaphoreTake(money_mutexHandle,( TickType_t ) 10)== pdTRUE){
+	  if(xSemaphoreTake(moneyHandle,( TickType_t ) 10)== pdTRUE){
 		if(money>=COFFEE_PRICE){
 			exchange();
 			result = 1;
-			xSemaphoreGive(money_mutexHandle);
+			xSemaphoreGive(moneyHandle);
 			flag_start_button =0;
 			//printf("Enough money, Let´s Start!");
 		}
 		else{
-			xSemaphoreGive(money_mutexHandle);
+			xSemaphoreGive(moneyHandle);
 			flag_start_button =0;
 		}
 
@@ -196,15 +189,6 @@ static int tim2_finished (fsm_t* this) {
 		return 0;}
 	}
 
-static int tim3_finished (fsm_t* this) {
-	if(flag_tim3){
-		HAL_TIM_Base_Stop_IT(&htim3);
-		flag_tim3 =0;
-		return 1;
-		}
-	else{
-		return 0;}
-}
 
 static void cup (fsm_t* this){
   HAL_GPIO_WritePin(FINISH_LED_GPIO_Port, FINISH_LED_Pin, GPIO_PIN_RESET);
@@ -215,16 +199,16 @@ static void cup (fsm_t* this){
 static void coffee (fsm_t* this)
 {
   HAL_GPIO_WritePin(START_LED_GPIO_Port, START_LED_Pin, GPIO_PIN_RESET);
-  HAL_GPIO_WritePin(COFFE_LED_GPIO_Port, COFFE_LED_Pin, GPIO_PIN_SET);
-  HAL_TIM_Base_Start_IT(&htim3);
+  HAL_GPIO_WritePin(COFFEE_LED_GPIO_Port, COFFEE_LED_Pin, GPIO_PIN_SET);
+  HAL_TIM_Base_Start_IT(&htim2);
 
 }
 
 static void milk (fsm_t* this)
 {
-  HAL_GPIO_WritePin(COFFE_LED_GPIO_Port, COFFE_LED_Pin, GPIO_PIN_RESET);
+  HAL_GPIO_WritePin(COFFEE_LED_GPIO_Port, COFFEE_LED_Pin, GPIO_PIN_RESET);
   HAL_GPIO_WritePin(MILK_LED_GPIO_Port, MILK_LED_Pin, GPIO_PIN_SET);
-  HAL_TIM_Base_Start_IT(&htim3);
+  HAL_TIM_Base_Start_IT(&htim2);
 }
 
 static void finish (fsm_t* this)
@@ -232,10 +216,10 @@ static void finish (fsm_t* this)
   HAL_GPIO_WritePin(MILK_LED_GPIO_Port, MILK_LED_Pin, GPIO_PIN_RESET);
   HAL_GPIO_WritePin(FINISH_LED_GPIO_Port, FINISH_LED_Pin, GPIO_PIN_SET);
   //int local_money;
-  if(xSemaphoreTake(money_mutexHandle,( TickType_t ) 10)== pdTRUE){
+  if(xSemaphoreTake(moneyHandle,( TickType_t ) 10)== pdTRUE){
   		//local_money = newCoin(0); //when i use printf
   		money=0;
-  		xSemaphoreGive(money_mutexHandle);
+  		xSemaphoreGive(moneyHandle);
   		 //printf("Exchange: %d\n", local_money);
   	  }
 }
@@ -245,64 +229,59 @@ static void finish (fsm_t* this)
 static fsm_trans_t cofm[] = {
   { COFM_WAITING, button_start_pressed, COFM_CUP,     cup    },
   { COFM_CUP,     tim2_finished, COFM_COFFEE,  coffee },
-  { COFM_COFFEE,  tim3_finished, COFM_MILK,    milk   },
-  { COFM_MILK,    tim3_finished, COFM_WAITING, finish },
+  { COFM_COFFEE,  tim2_finished, COFM_MILK,    milk   },
+  { COFM_MILK,    tim2_finished, COFM_WAITING, finish },
   {-1, NULL, -1, NULL },
 };
 
-
-/*--------------- Sensor temperature -----------------------------------*/
-
-static int b1_pressed (fsm_t* this) {
-	if(flag_B1){
-		flag_B1 =0;
+/*-----------------Temperature FSM--------------------------------------*/
+static int pressed(fsm_t* this){
+	if(flag_sensor){
+		flag_sensor=0;
 		return 1;
-			}
+	}
 	else{
-		return 0;}
-  }
-
-static void tim6_started(fsm_t* this){
-	HAL_TIM_Base_Start_IT(&htim6);
+		return 0;
+	}
 }
-
-static int tim6_finished (fsm_t* this) {
-	if(flag_tim6){
-		HAL_TIM_Base_Stop_IT(&htim3);
-		flag_tim6 =0;
-		return 1;
+static void start_adc(fsm_t* this){
+	HAL_ADC_Start(&hadc);
+}
+static int temp_high (fsm_t* this) {
+	int is_high = 0;
+	if (__HAL_ADC_GET_FLAG(&hadc, ADC_FLAG_EOC)){
+		temperature = (((int32_t)HAL_ADC_GetValue(&hadc)*VDD_APPLI/VDD_CALIB)- (int32_t) *TEMP30_CAL_ADDR );
+		temperature = temperature * (int32_t)(110 - 30);
+		temperature = temperature / (int32_t)(*TEMP110_CAL_ADDR - *TEMP30_CAL_ADDR);
+		temperature = temperature + 30;
+		if(temperature>=0){
+			is_high = 1;
 		}
-	else{
-		return 0;}
-}
+	}
+	return is_high;
+ }
+
 
 static void led_on(fsm_t * this){
 
-	if (__HAL_ADC_GET_FLAG(&hadc, ADC_FLAG_EOC)){
-			temperature = (((int32_t)HAL_ADC_GetValue(&hadc)*VDD_APPLI/VDD_CALIB)- (int32_t) *TEMP30_CAL_ADDR );
-		  	temperature = temperature * (int32_t)(110 - 30);
-		  	temperature = temperature / (int32_t)(*TEMP110_CAL_ADDR - *TEMP30_CAL_ADDR);
-		  	temperature = temperature + 30;
-		  	if(temperature<TEMP_REF){
-		  			HAL_GPIO_WritePin(GPIOC, GPIO_PIN_9, GPIO_PIN_RESET);
-		  			HAL_GPIO_WritePin(GPIOC, GPIO_PIN_8, GPIO_PIN_SET);
-		  		}
-		  	else{
-		  			HAL_GPIO_WritePin(GPIOC, GPIO_PIN_8, GPIO_PIN_RESET);
-		  			HAL_GPIO_WritePin(GPIOC, GPIO_PIN_9, GPIO_PIN_SET);
-		  		}
-	  }
+	HAL_GPIO_WritePin(GPIOC, GPIO_PIN_8, GPIO_PIN_RESET);
+	HAL_GPIO_WritePin(GPIOC, GPIO_PIN_8, GPIO_PIN_SET);
 }
 
+
+
 static fsm_trans_t temperaturem[] = {
-  {TEMP_IDLE, b1_pressed, TEMP_WAITING, tim6_started},
-  {TEMP_WAITING, tim6_finished, TEMP_SENSORING, led_on},
+  {TEMP_IDLE, pressed, TEMP_SENSORING, start_adc },
+  {TEMP_SENSORING, temp_high, TEMP_IDLE, led_on },
   {-1, NULL, -1, NULL },
 };
 /* USER CODE END 0 */
 
 int main(void)
 {
+
+  /* USER CODE BEGIN 1 */
+  /* USER CODE END 1 */
 
   /* MCU Configuration----------------------------------------------------------*/
 
@@ -317,37 +296,35 @@ int main(void)
   MX_ADC_Init();
   MX_TIM2_Init();
   MX_TIM3_Init();
-  MX_TIM6_Init();
 
   /* USER CODE BEGIN 2 */
-  HAL_ADC_Start(&hadc);
   /* USER CODE END 2 */
 
-  /* definition and creation of money_mutex */
-  osMutexDef(money_mutex);
-  money_mutexHandle = osMutexCreate(osMutex(money_mutex));
+  /* Create the mutex(es) */
+  /* definition and creation of money */
+  osMutexDef(money);
+  moneyHandle = osMutexCreate(osMutex(money));
 
-  	fsm_t* coffem_fsm = fsm_new (cofm);
-  	fsm_t* coinsm_fsm = fsm_new (coinsm);
-  	fsm_t* temperature_fsm = fsm_new (temperaturem);
-
+  /* Create the FSM´s */
+  fsm_t* wallet_fsm = fsm_new (coinsm);
+  fsm_t* coffee_fsm = fsm_new (cofm);
+  fsm_t* temperature_fsm = fsm_new (temperaturem);
   /* Create the thread(s) */
   /* definition and creation of defaultTask */
   osThreadDef(defaultTask, StartDefaultTask, osPriorityIdle, 0, 128);
   defaultTaskHandle = osThreadCreate(osThread(defaultTask), NULL);
 
-  /* definition and creation of walletTask */
-  osThreadDef(walletTask, StartWalletTask, osPriorityNormal, 0, 128);
-  walletTaskHandle = osThreadCreate(osThread(walletTask), coinsm_fsm);
+  /* definition and creation of coffeeTask */
+  osThreadDef(coffeeTask, StartCoffeeTask, osPriorityNormal, 0, 128);
+  coffeeTaskHandle = osThreadCreate(osThread(coffeeTask), coffee_fsm);
 
-  /* definition and creation of coffeTask */
-    osThreadDef(coffeTask, StartCoffeTask, osPriorityBelowNormal, 0, 128);
-    coffeTaskHandle = osThreadCreate(osThread(coffeTask), coffem_fsm);
+  /* definition and creation of walletTask */
+  osThreadDef(walletTask, StartWalletTask, osPriorityAboveNormal, 0, 128);
+  walletTaskHandle = osThreadCreate(osThread(walletTask), wallet_fsm);
 
   /* definition and creation of temperatureTask */
-  osThreadDef(temperatureTask, StartTemperatureTask, osPriorityLow, 0, 128);
+  osThreadDef(temperatureTask, StartSensorTask, osPriorityBelowNormal, 0, 128);
   temperatureTaskHandle = osThreadCreate(osThread(temperatureTask), temperature_fsm);
-
 
   /* Start scheduler */
   osKernelStart();
@@ -465,7 +442,7 @@ static void MX_TIM2_Init(void)
   htim2.Instance = TIM2;
   htim2.Init.Prescaler = 48000;
   htim2.Init.CounterMode = TIM_COUNTERMODE_UP;
-  htim2.Init.Period = 999; //249
+  htim2.Init.Period = 4999;
   htim2.Init.ClockDivision = TIM_CLOCKDIVISION_DIV1;
   htim2.Init.AutoReloadPreload = TIM_AUTORELOAD_PRELOAD_DISABLE;
   if (HAL_TIM_Base_Init(&htim2) != HAL_OK)
@@ -496,9 +473,9 @@ static void MX_TIM3_Init(void)
   TIM_MasterConfigTypeDef sMasterConfig;
 
   htim3.Instance = TIM3;
-  htim3.Init.Prescaler = 60000;
+  htim3.Init.Prescaler = 48000;
   htim3.Init.CounterMode = TIM_COUNTERMODE_UP;
-  htim3.Init.Period = 2499;
+  htim3.Init.Period = 4999;
   htim3.Init.ClockDivision = TIM_CLOCKDIVISION_DIV1;
   htim3.Init.AutoReloadPreload = TIM_AUTORELOAD_PRELOAD_DISABLE;
   if (HAL_TIM_Base_Init(&htim3) != HAL_OK)
@@ -521,31 +498,6 @@ static void MX_TIM3_Init(void)
 
 }
 
-/* TIM6 init function */
-static void MX_TIM6_Init(void)
-{
-
-  TIM_MasterConfigTypeDef sMasterConfig;
-
-  htim6.Instance = TIM6;
-  htim6.Init.Prescaler = 48000;
-  htim6.Init.CounterMode = TIM_COUNTERMODE_UP;
-  htim6.Init.Period = 4999; //449
-  htim6.Init.AutoReloadPreload = TIM_AUTORELOAD_PRELOAD_DISABLE;
-  if (HAL_TIM_Base_Init(&htim6) != HAL_OK)
-  {
-    Error_Handler();
-  }
-
-  sMasterConfig.MasterOutputTrigger = TIM_TRGO_RESET;
-  sMasterConfig.MasterSlaveMode = TIM_MASTERSLAVEMODE_DISABLE;
-  if (HAL_TIMEx_MasterConfigSynchronization(&htim6, &sMasterConfig) != HAL_OK)
-  {
-    Error_Handler();
-  }
-
-}
-
 /** Configure pins as 
         * Analog 
         * Input 
@@ -559,27 +511,21 @@ static void MX_GPIO_Init(void)
   GPIO_InitTypeDef GPIO_InitStruct;
 
   /* GPIO Ports Clock Enable */
-  __HAL_RCC_GPIOC_CLK_ENABLE();
   __HAL_RCC_GPIOF_CLK_ENABLE();
   __HAL_RCC_GPIOA_CLK_ENABLE();
+  __HAL_RCC_GPIOC_CLK_ENABLE();
 
   /*Configure GPIO pin Output Level */
   HAL_GPIO_WritePin(GPIOC, LD4_Pin|LD3_Pin, GPIO_PIN_RESET);
 
   /*Configure GPIO pin Output Level */
-  HAL_GPIO_WritePin(GPIOA, START_LED_Pin|COFFE_LED_Pin|MILK_LED_Pin|FINISH_LED_Pin, GPIO_PIN_RESET);
+  HAL_GPIO_WritePin(GPIOA, START_LED_Pin|COFFEE_LED_Pin|MILK_LED_Pin|FINISH_LED_Pin, GPIO_PIN_RESET);
 
-  /*Configure GPIO pins : COIN_BUTTON_Pin START_BUTTON_Pin CANCELL_BUTTON_Pin */
-  GPIO_InitStruct.Pin = COIN_BUTTON_Pin|START_BUTTON_Pin|CANCELL_BUTTON_Pin;
+  /*Configure GPIO pins : SENSOR_BUTTON_Pin COIN_BUTTON_Pin START_BUTTON_Pin CANCELL_BUTTON_Pin */
+  GPIO_InitStruct.Pin = SENSOR_BUTTON_Pin|COIN_BUTTON_Pin|START_BUTTON_Pin|CANCELL_BUTTON_Pin;
   GPIO_InitStruct.Mode = GPIO_MODE_IT_RISING;
-  GPIO_InitStruct.Pull = GPIO_PULLDOWN; //GPIO_PULLUP
-  HAL_GPIO_Init(GPIOC, &GPIO_InitStruct);
-
-  /*Configure GPIO pin : B1_Pin */
-  GPIO_InitStruct.Pin = B1_Pin;
-  GPIO_InitStruct.Mode = GPIO_MODE_IT_RISING_FALLING;
   GPIO_InitStruct.Pull = GPIO_PULLDOWN;
-  HAL_GPIO_Init(B1_GPIO_Port, &GPIO_InitStruct);
+  HAL_GPIO_Init(GPIOA, &GPIO_InitStruct);
 
   /*Configure GPIO pins : LD4_Pin LD3_Pin */
   GPIO_InitStruct.Pin = LD4_Pin|LD3_Pin;
@@ -588,18 +534,22 @@ static void MX_GPIO_Init(void)
   GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_LOW;
   HAL_GPIO_Init(GPIOC, &GPIO_InitStruct);
 
-  /*Configure GPIO pins : START_LED_Pin COFFE_LED_Pin MILK_LED_Pin FINISH_LED_Pin */
-  GPIO_InitStruct.Pin = START_LED_Pin|COFFE_LED_Pin|MILK_LED_Pin|FINISH_LED_Pin;
+  /*Configure GPIO pins : START_LED_Pin COFFEE_LED_Pin MILK_LED_Pin FINISH_LED_Pin */
+  GPIO_InitStruct.Pin = START_LED_Pin|COFFEE_LED_Pin|MILK_LED_Pin|FINISH_LED_Pin;
   GPIO_InitStruct.Mode = GPIO_MODE_OUTPUT_PP;
   GPIO_InitStruct.Pull = GPIO_NOPULL;
   GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_LOW;
   HAL_GPIO_Init(GPIOA, &GPIO_InitStruct);
 
   /* EXTI interrupt init*/
-  HAL_NVIC_SetPriority(EXTI4_15_IRQn, 3, 0);
-  HAL_NVIC_EnableIRQ(EXTI4_15_IRQn);
   HAL_NVIC_SetPriority(EXTI0_1_IRQn, 0, 0);
   HAL_NVIC_EnableIRQ(EXTI0_1_IRQn);
+
+  HAL_NVIC_SetPriority(EXTI2_3_IRQn, 0, 0);
+  HAL_NVIC_EnableIRQ(EXTI2_3_IRQn);
+
+  HAL_NVIC_SetPriority(EXTI4_15_IRQn, 0, 0);
+  HAL_NVIC_EnableIRQ(EXTI4_15_IRQn);
 
 }
 
@@ -615,8 +565,8 @@ void HAL_GPIO_EXTI_Callback(uint16_t GPIO_Pin){
 	if(GPIO_Pin == CANCELL_BUTTON_Pin){
 		flag_cancell_button = 1;
 		}
-	if(GPIO_Pin == B1_Pin){
-		flag_B1 = 1;
+	if(GPIO_Pin == SENSOR_BUTTON_Pin){
+		flag_sensor = 1;
 			}
 
 }
@@ -634,41 +584,51 @@ void StartDefaultTask(void const * argument)
   }
   /* USER CODE END 5 */ 
 }
-void StartWalletTask(void const * argument){
+
+/* StartCoffeeTask function */
+void StartCoffeeTask(void const * argument)
+{
 	fsm_t* pcTaskName;
 	TickType_t xLastWakeTime;
 	pcTaskName = ( fsm_t * ) argument;
 	xLastWakeTime = xTaskGetTickCount();
 
 	for( ;; ){
-	fsm_fire(pcTaskName);
-	vTaskDelayUntil( &xLastWakeTime, pdMS_TO_TICKS( 100 ) );
-	 }
+		fsm_fire(pcTaskName);
+		vTaskDelayUntil( &xLastWakeTime, pdMS_TO_TICKS( 100 ) );
+		}
 }
 
-void StartCoffeTask(void const * argument){
+/* StartWalletTask function */
+void StartWalletTask(void const * argument)
+{
 	fsm_t* pcTaskName;
 	TickType_t xLastWakeTime;
 	pcTaskName = ( fsm_t * ) argument;
 	xLastWakeTime = xTaskGetTickCount();
 
 	for( ;; ){
-	fsm_fire(pcTaskName);
-	vTaskDelayUntil( &xLastWakeTime, pdMS_TO_TICKS( 100 ) );
-	 }
+		fsm_fire(pcTaskName);
+		vTaskDelayUntil( &xLastWakeTime, pdMS_TO_TICKS( 100 ) );
+		 }
+
 }
 
-void StartTemperatureTask(void const * argument){
-	fsm_t* pcTaskName;
+/* StartSensorTask function */
+void StartSensorTask(void const * argument)
+{
+  /* USER CODE BEGIN StartSensorTask */
 	TickType_t xLastWakeTime;
-	pcTaskName = ( fsm_t * ) argument;
 	xLastWakeTime = xTaskGetTickCount();
-
-	for( ;; ){
-	fsm_fire(pcTaskName);
-	vTaskDelayUntil( &xLastWakeTime, pdMS_TO_TICKS( 200 ) );
-	 }
+  /* Infinite loop */
+  for(;;)
+  {
+	fsm_fire((fsm_t*)argument);
+	vTaskDelayUntil( &xLastWakeTime, pdMS_TO_TICKS(500) );
+  }
+  /* USER CODE END StartSensorTask */
 }
+
 /**
   * @brief  Period elapsed callback in non blocking mode
   * @note   This function is called  when TIM1 interrupt took place, inside
@@ -679,20 +639,15 @@ void StartTemperatureTask(void const * argument){
   */
 void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim)
 {
-
-  if (htim->Instance == TIM1) {
-    HAL_IncTick();
-  }
-  if (htim->Instance == TIM2) {
-	  flag_tim2 = 1;
-    }
-  if (htim->Instance == TIM3) {
-	  flag_tim3 = 1;
-    }
-  if (htim->Instance == TIM6) {
-	  flag_tim6 = 1;
-    }
-
+	if (htim->Instance == TIM1) {
+	    HAL_IncTick();
+	  }
+	if (htim->Instance == TIM2) {
+		flag_tim2 = 1;
+	    }
+	if (htim->Instance == TIM3) {
+		flag_tim3 = 1;
+	    }
 }
 
 /**

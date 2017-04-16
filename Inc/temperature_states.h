@@ -10,7 +10,6 @@
 
 enum temperature_state {
   TEMP_IDLE,
-  TEMP_WAITING,
   TEMP_SENSORING
 };
 

@@ -51,22 +51,22 @@
 
 /* Private define ------------------------------------------------------------*/
 
-#define COIN_BUTTON_Pin GPIO_PIN_13
-#define COIN_BUTTON_GPIO_Port GPIOC
-#define START_BUTTON_Pin GPIO_PIN_14
-#define START_BUTTON_GPIO_Port GPIOC
-#define CANCELL_BUTTON_Pin GPIO_PIN_15
-#define CANCELL_BUTTON_GPIO_Port GPIOC
-#define B1_Pin GPIO_PIN_0
-#define B1_GPIO_Port GPIOA
+#define SENSOR_BUTTON_Pin GPIO_PIN_0
+#define SENSOR_BUTTON_GPIO_Port GPIOA
+#define COIN_BUTTON_Pin GPIO_PIN_2
+#define COIN_BUTTON_GPIO_Port GPIOA
+#define START_BUTTON_Pin GPIO_PIN_4
+#define START_BUTTON_GPIO_Port GPIOA
+#define CANCELL_BUTTON_Pin GPIO_PIN_6
+#define CANCELL_BUTTON_GPIO_Port GPIOA
 #define LD4_Pin GPIO_PIN_8
 #define LD4_GPIO_Port GPIOC
 #define LD3_Pin GPIO_PIN_9
 #define LD3_GPIO_Port GPIOC
 #define START_LED_Pin GPIO_PIN_9
 #define START_LED_GPIO_Port GPIOA
-#define COFFE_LED_Pin GPIO_PIN_10
-#define COFFE_LED_GPIO_Port GPIOA
+#define COFFEE_LED_Pin GPIO_PIN_10
+#define COFFEE_LED_GPIO_Port GPIOA
 #define MILK_LED_Pin GPIO_PIN_11
 #define MILK_LED_GPIO_Port GPIOA
 #define FINISH_LED_Pin GPIO_PIN_12
@@ -75,12 +75,11 @@
 #define SWDIO_GPIO_Port GPIOA
 #define SWCLK_Pin GPIO_PIN_14
 #define SWCLK_GPIO_Port GPIOA
-
 /* USER CODE BEGIN Private defines */
 #define COFFEE_PRICE 50
 
 /*Temperature sensor defines*/
-#define TEMP_REF 35
+#define TEMP_REF 30
 #define TEMP110_CAL_ADDR ((uint16_t*)((uint32_t)0x1FFFF7C2))
 #define TEMP30_CAL_ADDR ((uint16_t*)((uint32_t)0x1FFFF7B8))
 #define VDD_CALIB ((uint16_t)(330))
